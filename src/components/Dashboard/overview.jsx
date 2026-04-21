@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import {
 	FiBell,
-	FiBarChart2,
 	FiBox,
+	FiCpu,
 	FiGrid,
 	FiHome,
 	FiLogOut,
@@ -20,7 +20,7 @@ const menuItems = [
 	{ key: 'home', label: 'Home', icon: FiHome },
 	{ key: 'pos', label: 'POS', icon: FiShoppingCart },
 	{ key: 'inventory', label: 'Inventory', icon: FiBox },
-	{ key: 'reports', label: 'Reports', icon: FiBarChart2 },
+	{ key: 'ai-insights', label: 'AI Insights', icon: FiCpu },
 	{ key: 'analytics', label: 'Analytics', icon: FiTrendingUp },
 	{ key: 'notifications', label: 'Notifications', icon: FiMessageSquare },
 ]
@@ -60,7 +60,7 @@ const transactions = [
 	{ product: 'Product', amount: '$89.00', time: '15 mins ago' },
 ]
 
-function Sidebar({ mobile = false, onClose, activePage = 'home', onNavigate = () => {} }) {
+function Sidebar({ mobile = false, onClose, activePage = 'home', onNavigate = () => {}, onLogout = () => {} }) {
 	return (
 		<aside
 			className={`flex h-screen w-68 flex-col overflow-hidden border-r border-slate-200 bg-white ${mobile ? 'shadow-2xl' : ''}`}
@@ -91,7 +91,8 @@ function Sidebar({ mobile = false, onClose, activePage = 'home', onNavigate = ()
 					{menuItems.map((item) => {
 						const Icon = item.icon
 						const isActive = item.key === activePage
-						const isClickable = item.key === 'home' || item.key === 'pos'
+						const isClickable =
+							item.key === 'home' || item.key === 'pos' || item.key === 'inventory' || item.key === 'analytics'
 						return (
 							<li key={item.label}>
 								<button
@@ -102,10 +103,10 @@ function Sidebar({ mobile = false, onClose, activePage = 'home', onNavigate = ()
 											if (mobile && onClose) onClose()
 										}
 									}}
-									className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition ${
+									className={`flex w-full items-center gap-3 rounded-lg border-0 px-3 py-2.5 text-left text-sm font-medium transition ${
 										isActive
-											? 'bg-[#794B1A] text-white shadow-sm'
-											: 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+											? 'bg-[#F5EBD9] text-slate-900'
+											: 'text-slate-600 hover:bg-[#F5EBD9] hover:text-slate-900'
 									}`}
 								>
 									<Icon className="text-base" />
@@ -120,7 +121,11 @@ function Sidebar({ mobile = false, onClose, activePage = 'home', onNavigate = ()
 			<div className="border-t border-slate-200 p-4">
 				<button
 					type="button"
-					className="mb-4 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+					onClick={() => {
+						onNavigate('settings')
+						if (mobile && onClose) onClose()
+					}}
+					className="mb-4 flex w-full items-center gap-3 rounded-lg border-0 px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-[#F5EBD9] hover:text-slate-900"
 				>
 					<FiSettings className="text-base" />
 					Settings
@@ -136,20 +141,27 @@ function Sidebar({ mobile = false, onClose, activePage = 'home', onNavigate = ()
 							<p className="text-[11px] text-slate-500">Store Manager</p>
 						</div>
 					</div>
-					<FiLogOut className="text-slate-400" />
+					<button
+						type="button"
+						onClick={onLogout}
+						className="grid h-7 w-7 place-items-center rounded-md text-red-500 transition hover:bg-red-50 hover:text-red-600"
+						aria-label="Log out"
+					>
+						<FiLogOut />
+					</button>
 				</div>
 			</div>
 		</aside>
 	)
 }
 
-function Overview({ activePage = 'home', onNavigate = () => {} }) {
+function Overview({ activePage = 'home', onNavigate = () => {}, onLogout = () => {} }) {
 	const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
 
 	return (
 		<div className="h-screen overflow-hidden bg-[#f5f6f8] text-slate-900">
 			<div className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:block">
-					<Sidebar activePage={activePage} onNavigate={onNavigate} />
+					<Sidebar activePage={activePage} onNavigate={onNavigate} onLogout={onLogout} />
 			</div>
 
 				{isMobileMenuOpen ? (
@@ -165,6 +177,7 @@ function Overview({ activePage = 'home', onNavigate = () => {} }) {
 							onClose={() => setIsMobileMenuOpen(false)}
 							activePage={activePage}
 							onNavigate={onNavigate}
+							onLogout={onLogout}
 						/>
 					</div>
 				) : null}
