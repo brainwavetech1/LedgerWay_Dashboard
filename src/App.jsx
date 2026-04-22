@@ -3,6 +3,7 @@ import Overview from './components/Dashboard/overview'
 import Pos from './components/Dashboard/pos'
 import Inventory from './components/Dashboard/inventory'
 import Analytics from './components/Dashboard/analytics'
+import AiInsights from './components/Dashboard/ai_insights'
 import Settings from './components/Dashboard/settings'
 import Login from './components/Credentials/login'
 import Signup from './components/Credentials/signup'
@@ -41,6 +42,10 @@ function App() {
 
   if (activePage === 'analytics') {
     return <Analytics activePage={activePage} onNavigate={setActivePage} onLogout={handleLogout} />
+  }
+
+  if (activePage === 'ai-insights') {
+    return <AiInsights activePage={activePage} onNavigate={setActivePage} onLogout={handleLogout} />
   }
 
   if (activePage === 'settings') {

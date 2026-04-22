@@ -22,6 +22,7 @@ import {
 	FiTrash2,
 	FiArchive,
 } from 'react-icons/fi'
+import NotificationPopup from '../shared/NotificationPopup'
 
 const menuItems = [
 	{ key: 'home', label: 'Home', icon: FiHome },
@@ -161,7 +162,11 @@ function Sidebar({ mobile = false, onClose, activePage = 'inventory', onNavigate
 						const Icon = item.icon
 						const isActive = item.key === activePage
 						const isClickable =
-							item.key === 'home' || item.key === 'pos' || item.key === 'inventory' || item.key === 'analytics'
+							item.key === 'home' ||
+							item.key === 'pos' ||
+							item.key === 'inventory' ||
+							item.key === 'analytics' ||
+							item.key === 'ai-insights'
 						return (
 							<li key={item.label}>
 								<button
@@ -226,6 +231,7 @@ function Sidebar({ mobile = false, onClose, activePage = 'inventory', onNavigate
 
 function Inventory({ activePage = 'inventory', onNavigate = () => {}, onLogout = () => {} }) {
 	const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+	const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
 
 	return (
 		<div className="h-screen overflow-hidden bg-[#F4F5F7] text-slate-900">
@@ -285,12 +291,18 @@ function Inventory({ activePage = 'inventory', onNavigate = () => {}, onLogout =
 										<FiShoppingCart className="text-sm" />
 										Quick Add Sale
 									</button>
-									<button
-										type="button"
-										className="grid h-10 w-10 place-items-center rounded-lg border border-slate-200 text-slate-500 transition hover:text-slate-700"
-									>
-										<FiBell />
-									</button>
+									<div className="relative">
+										<button
+											type="button"
+											onClick={() => setIsNotificationsOpen((prev) => !prev)}
+											className="grid h-10 w-10 place-items-center rounded-lg border border-slate-200 text-slate-500 transition hover:text-slate-700"
+											aria-label="Open notifications"
+											aria-expanded={isNotificationsOpen}
+										>
+											<FiBell />
+										</button>
+										<NotificationPopup open={isNotificationsOpen} onClose={() => setIsNotificationsOpen(false)} />
+									</div>
 								</div>
 							</div>
 						</div>
