@@ -5,6 +5,7 @@ import {
 	FiBriefcase,
 	FiCpu,
 	FiCreditCard,
+	FiDownload,
 	FiEdit2,
 	FiFileText,
 	FiGrid,
@@ -33,7 +34,7 @@ const menuItems = [
 ]
 
 const settingsMenu = [
-	{ label: 'Business Profile', icon: FiBriefcase, active: true },
+	{ label: 'Business Profile', icon: FiBriefcase },
 	{ label: 'Staff Accounts', icon: FiUsers },
 	{ label: 'Role Management', icon: FiShield },
 	{ label: 'Tax Configuration', icon: FiFileText },
@@ -50,6 +51,12 @@ const rolePermissions = [
 	{ role: 'Owner', access: 'Full Access', icon: FiShield, tone: 'text-emerald-600 bg-emerald-50' },
 	{ role: 'Manager', access: 'Staff & Inventory', icon: FiUsers, tone: 'text-amber-600 bg-amber-50' },
 	{ role: 'Cashier', access: 'Sales Only', icon: FiUser, tone: 'text-blue-600 bg-blue-50' },
+]
+
+const billingHistory = [
+	{ date: 'Oct 1, 2023', amount: '$49.00', status: 'Paid', plan: 'Restaurant Pro' },
+	{ date: 'Sep 1, 2023', amount: '$49.00', status: 'Paid', plan: 'Restaurant Pro' },
+	{ date: 'Aug 1, 2023', amount: '$49.00', status: 'Paid', plan: 'Restaurant Pro' },
 ]
 
 function Sidebar({ mobile = false, onClose, activePage = 'settings', onNavigate = () => {}, onLogout = () => {} }) {
@@ -157,6 +164,7 @@ function Sidebar({ mobile = false, onClose, activePage = 'settings', onNavigate 
 
 function Settings({ activePage = 'settings', onNavigate = () => {}, onLogout = () => {} }) {
 	const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+	const [activeSettingsSection, setActiveSettingsSection] = useState('Business Profile')
 
 	return (
 		<div className="h-screen overflow-hidden bg-[#F4F5F7] text-slate-900">
@@ -227,42 +235,176 @@ function Settings({ activePage = 'settings', onNavigate = () => {}, onLogout = (
 						</div>
 					</header>
 
-					<section className="grid gap-4 xl:grid-cols-[1fr_2.2fr]">
-						<aside className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_1px_1px_rgba(15,23,42,0.04)]">
-							<p className="mb-4 text-xs font-medium text-slate-400">Enterprise Management</p>
-
-							<div className="space-y-1.5">
-								{settingsMenu.slice(0, 5).map((item) => {
-									const Icon = item.icon
+					<section className="space-y-4">
+						<nav className="rounded-2xl border border-slate-200 bg-white px-4 shadow-[0_1px_1px_rgba(15,23,42,0.04)]">
+							<div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap border-b border-slate-200">
+								{settingsMenu.map((item) => {
+									const isActive = activeSettingsSection === item.label
 									return (
 										<button
 											key={item.label}
 											type="button"
-											className={`flex w-full items-center gap-3 rounded-xl border-0 px-3 py-2.5 text-left text-base font-semibold transition ${
-												item.active
-													? 'bg-[#F5EBD9] text-slate-900'
-													: 'text-slate-600 hover:bg-[#F5EBD9]'
+											onClick={() => setActiveSettingsSection(item.label)}
+											className={`inline-flex items-center border-b-2 px-3 py-3 text-base font-medium transition ${
+												isActive
+													? 'border-[#8A5B29] text-[#8A5B29]'
+													: 'border-transparent text-slate-600 hover:text-slate-800'
 											}`}
 										>
-											<Icon className="text-base" />
 											{item.label}
 										</button>
 									)
 								})}
 							</div>
+						</nav>
 
-							<div className="mt-5 border-t border-slate-100 pt-4">
-								<button
-									type="button"
-									className="flex w-full items-center gap-3 rounded-xl border-0 px-3 py-2.5 text-left text-base font-semibold text-slate-600 transition hover:bg-[#F5EBD9]"
-								>
-									<FiCreditCard className="text-base" />
-									Billing &amp; Plans
-								</button>
+						{activeSettingsSection === 'Billing & Plans' ? (
+							<div className="space-y-4">
+								<article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_1px_1px_rgba(15,23,42,0.04)]">
+									<h3 className="text-[1.8rem] font-extrabold tracking-tight text-slate-900">Subscription &amp; Billing</h3>
+									<p className="mt-1 text-sm font-medium text-slate-500">
+										Manage your subscription plan, payment methods, and billing history.
+									</p>
+								</article>
+
+								<div className="grid gap-4 xl:grid-cols-[2fr_1fr]">
+									<article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_1px_1px_rgba(15,23,42,0.04)]">
+										<h4 className="mb-3 text-[1.7rem] font-extrabold tracking-tight text-slate-900">Current Plan</h4>
+										<div className="rounded-2xl border border-slate-200 p-4">
+											<div className="grid gap-4 lg:grid-cols-[1.3fr_1fr] lg:items-center">
+												<div>
+													<div className="mb-2 inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+														Active
+													</div>
+													<p className="text-xs font-semibold text-slate-400">Billed monthly</p>
+													<h5 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-900">Restaurant Pro</h5>
+													<p className="mt-2 max-w-sm text-sm font-medium text-slate-500">
+														Everything you need to manage a growing restaurant, including advanced inventory and POS integration.
+													</p>
+													<div className="mt-4">
+														<p className="text-5xl font-extrabold leading-none text-slate-900">
+															$49<span className="text-lg font-bold text-slate-400"> /month</span>
+														</p>
+													</div>
+													<div className="mt-4 flex flex-wrap items-center gap-2.5">
+														<button
+															type="button"
+															className="rounded-lg bg-[#8A5B29] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#734A20]"
+														>
+															Upgrade Plan
+														</button>
+														<button
+															type="button"
+															className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-500 transition hover:bg-slate-50"
+														>
+															Downgrade
+														</button>
+													</div>
+												</div>
+
+												<div className="h-52 rounded-xl bg-[radial-gradient(circle_at_20%_20%,#31200f,#16110b_45%,#0f172a_100%)] p-4 shadow-inner">
+													<div className="h-full rounded-lg border border-amber-300/20 bg-linear-to-br from-amber-100/5 to-transparent p-4">
+														<div className="flex h-full items-end rounded-md border border-amber-100/10 bg-linear-to-t from-amber-200/10 to-transparent p-3">
+															<p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-100/50">Restaurant Ambience</p>
+														</div>
+													</div>
+												</div>
+											</div>
+										</div>
+									</article>
+
+									<article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_1px_1px_rgba(15,23,42,0.04)]">
+										<h4 className="text-2xl font-bold tracking-tight text-slate-900">Next Invoice</h4>
+										<div className="mt-4 space-y-3 border-t border-slate-100 pt-4 text-sm">
+											<div className="flex items-center justify-between">
+												<p className="font-semibold text-slate-400">Date</p>
+												<p className="font-semibold text-slate-700">Nov 1, 2023</p>
+											</div>
+											<div className="flex items-center justify-between">
+												<p className="font-semibold text-slate-400">Amount</p>
+												<p className="font-semibold text-slate-700">$49.00</p>
+											</div>
+										</div>
+
+										<button
+											type="button"
+											className="mt-5 w-full rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+										>
+											Cancel Subscription
+										</button>
+									</article>
+								</div>
+
+								<article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_1px_1px_rgba(15,23,42,0.04)]">
+									<div className="mb-4 flex items-center justify-between">
+										<h4 className="text-[1.7rem] font-extrabold tracking-tight text-slate-900">Payment Method</h4>
+										<button type="button" className="text-sm font-semibold text-[#8A5B29] hover:text-[#734A20]">
+											Add New
+										</button>
+									</div>
+
+									<div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50/40 p-3.5">
+										<div className="flex items-center gap-3">
+											<div className="grid h-12 w-12 place-items-center rounded-lg bg-slate-100 text-slate-500">
+												<FiCreditCard />
+											</div>
+											<div>
+												<p className="text-base font-bold text-slate-800">Visa ending in 4242</p>
+												<p className="text-sm font-medium text-slate-400">Expires 12/2025</p>
+											</div>
+										</div>
+
+										<div className="inline-flex items-center gap-3">
+											<span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-500">Default</span>
+											<button type="button" className="text-slate-400 transition hover:text-slate-600">
+												<FiEdit2 className="text-sm" />
+											</button>
+										</div>
+									</div>
+								</article>
+
+								<article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_1px_1px_rgba(15,23,42,0.04)]">
+									<h4 className="mb-4 text-[1.7rem] font-extrabold tracking-tight text-slate-900">Billing History</h4>
+									<div className="overflow-x-auto rounded-xl border border-slate-200">
+										<table className="min-w-full text-left text-sm">
+											<thead className="bg-slate-50 text-slate-500">
+												<tr>
+													<th className="px-4 py-3 font-semibold">Date</th>
+													<th className="px-4 py-3 font-semibold">Amount</th>
+													<th className="px-4 py-3 font-semibold">Status</th>
+													<th className="px-4 py-3 font-semibold">Plan</th>
+													<th className="px-4 py-3 font-semibold text-right">Receipt</th>
+												</tr>
+											</thead>
+											<tbody>
+												{billingHistory.map((invoice) => (
+													<tr key={invoice.date} className="border-t border-slate-100">
+														<td className="px-4 py-3 font-medium text-slate-400">{invoice.date}</td>
+														<td className="px-4 py-3 font-semibold text-slate-700">{invoice.amount}</td>
+														<td className="px-4 py-3">
+															<span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+																{invoice.status}
+															</span>
+														</td>
+														<td className="px-4 py-3 font-semibold text-slate-400">{invoice.plan}</td>
+														<td className="px-4 py-3 text-right">
+															<button
+																type="button"
+																className="inline-flex items-center gap-1 text-sm font-semibold text-[#8A5B29] hover:text-[#734A20]"
+															>
+																<FiDownload className="text-xs" />
+																PDF
+															</button>
+														</td>
+													</tr>
+												))}
+											</tbody>
+										</table>
+									</div>
+								</article>
 							</div>
-						</aside>
-
-						<div className="space-y-4">
+						) : (
+							<div className="space-y-4">
 							<article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_1px_1px_rgba(15,23,42,0.04)]">
 								<div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
 									<div>
@@ -434,7 +576,8 @@ function Settings({ activePage = 'settings', onNavigate = () => {}, onLogout = (
 									</div>
 								</article>
 							</div>
-						</div>
+							</div>
+						)}
 					</section>
 
 					<footer className="mt-5 border-t border-slate-200 pt-4 text-center text-xs font-semibold text-slate-300">
