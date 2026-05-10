@@ -53,7 +53,10 @@ const insightCards = [
 	},
 ]
 
-function Sidebar({ mobile = false, onClose, activePage = 'ai-insights', onNavigate = () => {}, onLogout = () => {} }) {
+function Sidebar({ mobile = false, onClose, activePage = 'ai-insights', onNavigate = () => {}, onLogout = () => {}, profile = null, user = null }) {
+	const displayName = profile?.fullName || user?.displayName || user?.email?.split('@')[0] || 'Account'
+	const subtitle = profile?.businessName || profile?.industry || user?.email || 'Signed in'
+
 	return (
 		<aside
 			className={`flex h-screen w-68 flex-col overflow-hidden border-r border-slate-200 bg-white ${mobile ? 'shadow-2xl' : ''}`}
@@ -131,11 +134,11 @@ function Sidebar({ mobile = false, onClose, activePage = 'ai-insights', onNaviga
 				<div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2.5">
 					<div className="flex items-center gap-2.5">
 						<div className="grid h-8 w-8 place-items-center rounded-full bg-[#E7D7C6] text-xs font-bold text-[#794B1A]">
-							S
+							{displayName.slice(0, 1).toUpperCase()}
 						</div>
 						<div>
-							<p className="text-xs font-semibold text-slate-800">Sarah Miller</p>
-							<p className="text-[11px] text-slate-500">Store Manager</p>
+							<p className="text-xs font-semibold text-slate-800">{displayName}</p>
+							<p className="text-[11px] text-slate-500">{subtitle}</p>
 						</div>
 					</div>
 					<button
@@ -152,14 +155,14 @@ function Sidebar({ mobile = false, onClose, activePage = 'ai-insights', onNaviga
 	)
 }
 
-function AiInsights({ activePage = 'ai-insights', onNavigate = () => {}, onLogout = () => {} }) {
+function AiInsights({ activePage = 'ai-insights', onNavigate = () => {}, onLogout = () => {}, profile = null, user = null }) {
 	const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
 	const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
 
 	return (
 		<div className="h-screen overflow-hidden bg-[#F4F5F7] text-slate-900">
 			<div className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:block">
-				<Sidebar activePage={activePage} onNavigate={onNavigate} onLogout={onLogout} />
+				<Sidebar activePage={activePage} onNavigate={onNavigate} onLogout={onLogout} profile={profile} user={user} />
 			</div>
 
 			{isMobileMenuOpen ? (
@@ -176,6 +179,8 @@ function AiInsights({ activePage = 'ai-insights', onNavigate = () => {}, onLogou
 						activePage={activePage}
 						onNavigate={onNavigate}
 						onLogout={onLogout}
+						profile={profile}
+						user={user}
 					/>
 				</div>
 			) : null}

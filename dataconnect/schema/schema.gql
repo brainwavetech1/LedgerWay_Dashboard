@@ -1,0 +1,59 @@
+type User @table {
+  displayName: String!
+  email: String!
+  role: String!
+  createdAt: Timestamp!
+  photoUrl: String
+}
+
+type Client @table {
+  name: String!
+  contactEmail: String!
+  createdAt: Timestamp!
+  contactPerson: String
+  phoneNumber: String
+  address: String
+}
+
+type Project @table {
+  name: String!
+  startDate: Date!
+  status: String!
+  createdAt: Timestamp!
+  description: String
+  endDate: Date
+  client: Client
+  owner: User
+}
+
+type Task @table {
+  name: String!
+  status: String!
+  createdAt: Timestamp!
+  description: String
+  dueDate: Date
+  estimatedHours: Int
+  project: Project
+  assignee: User
+}
+
+type TimesheetEntry @table {
+  hoursSpent: Float!
+  dateWorked: Date!
+  createdAt: Timestamp!
+  notes: String
+  task: Task
+  user: User
+}
+
+type Invoice @table {
+  invoiceNumber: String!
+  issueDate: Date!
+  dueDate: Date!
+  amount: Float!
+  status: String!
+  createdAt: Timestamp!
+  notes: String
+  client: Client
+  project: Project
+}

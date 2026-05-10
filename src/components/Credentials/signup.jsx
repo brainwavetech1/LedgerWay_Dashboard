@@ -9,11 +9,42 @@ const industries = [
 ]
 
 function Signup({ onCreateAccount = () => {}, onBackToLogin = () => {} }) {
-	const [selectedIndustry, setSelectedIndustry] = useState('restaurant')
+	const formatFirebaseError = (error) => {
+		if (error?.code === 'auth/configuration-not-found') {
+			return 'Firebase Auth is not enabled for this project. Turn on Email/Password sign-in in the Firebase Console.'
+		}
 
-	const handleSubmit = (event) => {
+		return error?.message || 'Unable to create your Firebase account.'
+	}
+
+	const [selectedIndustry, setSelectedIndustry] = useState('restaurant')
+	const [fullName, setFullName] = useState('')
+	const [businessName, setBusinessName] = useState('')
+	const [email, setEmail] = useState('')
+	const [phone, setPhone] = useState('')
+	const [password, setPassword] = useState('')
+	const [errorMessage, setErrorMessage] = useState('')
+	const [isSubmitting, setIsSubmitting] = useState(false)
+
+	const handleSubmit = async (event) => {
 		event.preventDefault()
-		onCreateAccount()
+		setErrorMessage('')
+		setIsSubmitting(true)
+
+		try {
+			await onCreateAccount({
+				fullName,
+				businessName,
+				email,
+				phone,
+				password,
+				industry: selectedIndustry,
+			})
+		} catch (error) {
+			setErrorMessage(formatFirebaseError(error))
+		} finally {
+			setIsSubmitting(false)
+		}
 	}
 
 	return (
@@ -36,6 +67,8 @@ function Signup({ onCreateAccount = () => {}, onBackToLogin = () => {} }) {
 										id="fullName"
 										type="text"
 										placeholder="Enter full name"
+										value={fullName}
+										onChange={(event) => setFullName(event.target.value)}
 										className="w-full rounded-md border border-[#ddd7cf] bg-[#f7f4f1] px-3 py-2.5 text-sm outline-none placeholder:text-[#9b7d5c]"
 									/>
 								</div>
@@ -48,6 +81,8 @@ function Signup({ onCreateAccount = () => {}, onBackToLogin = () => {} }) {
 										id="businessName"
 										type="text"
 										placeholder="Enter business name"
+										value={businessName}
+										onChange={(event) => setBusinessName(event.target.value)}
 										className="w-full rounded-md border border-[#ddd7cf] bg-[#f7f4f1] px-3 py-2.5 text-sm outline-none placeholder:text-[#9b7d5c]"
 									/>
 								</div>
@@ -62,6 +97,8 @@ function Signup({ onCreateAccount = () => {}, onBackToLogin = () => {} }) {
 										id="email"
 										type="email"
 										placeholder="name@company.com"
+										value={email}
+										onChange={(event) => setEmail(event.target.value)}
 										className="w-full rounded-md border border-[#ddd7cf] bg-[#f7f4f1] px-3 py-2.5 text-sm outline-none placeholder:text-[#9b7d5c]"
 									/>
 								</div>
@@ -74,6 +111,8 @@ function Signup({ onCreateAccount = () => {}, onBackToLogin = () => {} }) {
 										id="phone"
 										type="tel"
 										placeholder="+1 (555) 000-0000"
+										value={phone}
+										onChange={(event) => setPhone(event.target.value)}
 										className="w-full rounded-md border border-[#ddd7cf] bg-[#f7f4f1] px-3 py-2.5 text-sm outline-none placeholder:text-[#9b7d5c]"
 									/>
 								</div>
@@ -87,6 +126,8 @@ function Signup({ onCreateAccount = () => {}, onBackToLogin = () => {} }) {
 									id="password"
 									type="password"
 									placeholder="Create a password"
+									value={password}
+									onChange={(event) => setPassword(event.target.value)}
 									className="w-full rounded-md border border-[#ddd7cf] bg-[#f7f4f1] px-3 py-2.5 text-sm outline-none placeholder:text-[#9b7d5c]"
 								/>
 							</div>
@@ -118,10 +159,12 @@ function Signup({ onCreateAccount = () => {}, onBackToLogin = () => {} }) {
 
 							<button
 								type="submit"
-								className="mt-2 w-full rounded-md bg-[#8A5B29] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#734A20]"
+								disabled={isSubmitting}
+								className="mt-2 w-full rounded-md bg-[#8A5B29] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#734A20] disabled:cursor-not-allowed disabled:opacity-60"
 							>
-								Start Free Trial
+								{isSubmitting ? 'Creating Account...' : 'Start Free Trial'}
 							</button>
+							{errorMessage ? <p className="text-sm text-red-600">{errorMessage}</p> : null}
 						</form>
 
 						<p className="mt-6 text-center text-xs text-slate-500">

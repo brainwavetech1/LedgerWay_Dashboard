@@ -2,12 +2,31 @@ import { useState } from 'react'
 import { FiEyeOff, FiLock, FiMail } from 'react-icons/fi'
 
 function Login({ onSignIn = () => {}, onCreateAccount = () => {} }) {
+	const formatFirebaseError = (error) => {
+		if (error?.code === 'auth/configuration-not-found') {
+			return 'Firebase Auth is not enabled for this project. Turn on Email/Password sign-in in the Firebase Console.'
+		}
+
+		return error?.message || 'Unable to sign in with Firebase.'
+	}
+
 	const [email, setEmail] = useState('')
 	const [password, setPassword] = useState('')
+	const [errorMessage, setErrorMessage] = useState('')
+	const [isSubmitting, setIsSubmitting] = useState(false)
 
-	const handleSubmit = (event) => {
+	const handleSubmit = async (event) => {
 		event.preventDefault()
-		onSignIn({ email, password })
+		setErrorMessage('')
+		setIsSubmitting(true)
+
+		try {
+			await onSignIn({ email, password })
+		} catch (error) {
+			setErrorMessage(formatFirebaseError(error))
+		} finally {
+			setIsSubmitting(false)
+		}
 	}
 
 	return (
@@ -85,10 +104,12 @@ function Login({ onSignIn = () => {}, onCreateAccount = () => {} }) {
 
 							<button
 								type="submit"
-								className="w-full rounded-md bg-[#8A5B29] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#734A20]"
+								disabled={isSubmitting}
+								className="w-full rounded-md bg-[#8A5B29] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#734A20] disabled:cursor-not-allowed disabled:opacity-60"
 							>
-								Sign In
+								{isSubmitting ? 'Signing In...' : 'Sign In'}
 							</button>
+							{errorMessage ? <p className="text-sm text-red-600">{errorMessage}</p> : null}
 						</form>
 
 						<div className="mt-6 flex items-center gap-4 text-xs text-slate-400">

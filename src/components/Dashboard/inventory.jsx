@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
 	FiAlertTriangle,
 	FiBell,
 	FiBox,
+	FiCpu,
 	FiEdit2,
 	FiFilter,
 	FiGrid,
@@ -11,17 +12,19 @@ import {
 	FiLogOut,
 	FiMenu,
 	FiMessageSquare,
-	FiCpu,
 	FiPackage,
+	FiPlus,
 	FiSearch,
 	FiSettings,
 	FiShoppingCart,
 	FiTrendingUp,
 	FiTruck,
-	FiX,
 	FiTrash2,
+	FiX,
 	FiArchive,
 } from 'react-icons/fi'
+import { addDoc, collection, deleteDoc, doc, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore'
+import { db } from '../../firebase'
 import NotificationPopup from '../shared/NotificationPopup'
 
 const menuItems = [
@@ -33,104 +36,84 @@ const menuItems = [
 	{ key: 'notifications', label: 'Notifications', icon: FiMessageSquare },
 ]
 
-const statCards = [
-	{
-		title: 'Total Products',
-		value: '1,284',
-		meta: '+2.5% this month',
-		metaClass: 'text-emerald-600',
-		icon: FiPackage,
-		iconClass: 'text-[#8A5B29]',
-		borderClass: 'border-slate-200',
-	},
-	{
-		title: 'Low Stock Items',
-		value: '12',
-		meta: 'Requires attention',
-		metaClass: 'text-[#f05a22]',
-		icon: FiAlertTriangle,
-		iconClass: 'text-[#f6a25e]',
-		borderClass: 'border-rose-200',
-	},
-	{
-		title: 'Out of Stock',
-		value: '05',
-		meta: 'Critical Action',
-		metaClass: 'text-rose-600',
-		icon: FiArchive,
-		iconClass: 'text-rose-400',
-		borderClass: 'border-slate-200',
-	},
-	{
-		title: 'Monthly Orders',
-		value: '452',
-		meta: '+12.8% growth',
-		metaClass: 'text-blue-600',
-		icon: FiShoppingCart,
-		iconClass: 'text-blue-500',
-		borderClass: 'border-slate-200',
-	},
-]
+const defaultFormState = {
+	name: '',
+	sku: '',
+	category: '',
+	supplier: '',
+	quantity: '0',
+	lowStockThreshold: '10',
+}
 
-const categories = ['All Items', 'Neuro-gear', 'Bio-sensors', 'Accessories']
+function parseTimestamp(value) {
+	if (!value) {
+		return null
+	}
 
-const inventoryRows = [
-	{
-		name: 'NeuralLink Pro Gen-2',
-		sku: 'SKU: BW-NL-2024',
-		category: 'Neuro-gear',
-		supplier: 'Synapse Tech Corp',
-		quantity: '124 units',
-		status: 'In Stock',
+	if (typeof value.toDate === 'function') {
+		return value.toDate()
+	}
+
+	const date = new Date(value)
+	return Number.isNaN(date.getTime()) ? null : date
+}
+
+function normalizeSku(value) {
+	return String(value || '').replace(/^SKU:\s*/i, '').trim()
+}
+
+function formatRelativeTime(date) {
+	if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+		return 'Recently'
+	}
+
+	const diffMs = date.getTime() - Date.now()
+	const absDiff = Math.abs(diffMs)
+	const formatter = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
+
+	if (absDiff < 60_000) {
+		return 'Just now'
+	}
+
+	if (absDiff < 3_600_000) {
+		return formatter.format(Math.round(diffMs / 60_000), 'minute')
+	}
+
+	if (absDiff < 86_400_000) {
+		return formatter.format(Math.round(diffMs / 3_600_000), 'hour')
+	}
+
+	return formatter.format(Math.round(diffMs / 86_400_000), 'day')
+}
+
+function getInventoryStatus(quantity, threshold) {
+	if (quantity <= 0) {
+		return {
+			label: 'Out of Stock',
+			statusClass: 'bg-rose-100 text-rose-700',
+			quantityClass: 'text-rose-600',
+		}
+	}
+
+	if (quantity <= threshold) {
+		return {
+			label: 'Low Stock',
+			statusClass: 'bg-orange-100 text-orange-700',
+			quantityClass: 'text-[#F05A22]',
+		}
+	}
+
+	return {
+		label: 'In Stock',
 		statusClass: 'bg-emerald-100 text-emerald-700',
 		quantityClass: 'text-slate-700',
-	},
-	{
-		name: 'EEG Sensor Pads (10pk)',
-		sku: 'SKU: BW-EEG-P10',
-		category: 'Bio-sensors',
-		supplier: 'BioMed Global',
-		quantity: '08 units',
-		status: 'Low Stock',
-		statusClass: 'bg-orange-100 text-orange-700',
-		quantityClass: 'text-[#F05A22]',
-	},
-	{
-		name: 'Synaptic Bridge Cable',
-		sku: 'SKU: BW-CBL-SYN',
-		category: 'Accessories',
-		supplier: 'Alpha Connect',
-		quantity: '45 units',
-		status: 'In Stock',
-		statusClass: 'bg-emerald-100 text-emerald-700',
-		quantityClass: 'text-slate-700',
-	},
-]
+	}
+}
 
-const activities = [
-	{
-		title: 'Shipment Received: Synapse Tech Corp',
-		description: '50 units of NeuralLink Pro Gen-2 added to inventory.',
-		time: '2 hours ago',
-		icon: FiTruck,
-		iconWrap: 'bg-blue-100 text-blue-500',
-	},
-	{
-		title: 'Alert: Stock Low',
-		description: 'EEG Sensor Pads dropped below safety threshold (10).',
-		time: '5 hours ago',
-		icon: FiAlertTriangle,
-		iconWrap: 'bg-orange-100 text-orange-500',
-	},
-]
+function Sidebar({ mobile = false, onClose, activePage = 'inventory', onNavigate = () => {}, onLogout = () => {}, profile = null, user = null }) {
+	const displayName = profile?.fullName || user?.displayName || user?.email?.split('@')[0] || 'Account'
+	const subtitle = profile?.businessName || profile?.industry || user?.email || 'Signed in'
 
-const suppliers = [
-	{ name: 'Synapse Tech', subtitle: 'Main Hardware' },
-	{ name: 'BioMed Global', subtitle: 'Bio-sensors' },
-	{ name: 'Alpha Connect', subtitle: 'Cabling/Parts' },
-]
-
-function Sidebar({ mobile = false, onClose, activePage = 'inventory', onNavigate = () => {}, onLogout = () => {} }) {
 	return (
 		<aside
 			className={`flex h-screen w-68 flex-col overflow-hidden border-r border-slate-200 bg-white ${mobile ? 'shadow-2xl' : ''}`}
@@ -208,11 +191,11 @@ function Sidebar({ mobile = false, onClose, activePage = 'inventory', onNavigate
 				<div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2.5">
 					<div className="flex items-center gap-2.5">
 						<div className="grid h-8 w-8 place-items-center rounded-full bg-[#E7D7C6] text-xs font-bold text-[#794B1A]">
-							S
+							{displayName.slice(0, 1).toUpperCase()}
 						</div>
 						<div>
-							<p className="text-xs font-semibold text-slate-800">Sarah Miller</p>
-							<p className="text-[11px] text-slate-500">Store Manager</p>
+							<p className="text-xs font-semibold text-slate-800">{displayName}</p>
+							<p className="text-[11px] text-slate-500">{subtitle}</p>
 						</div>
 					</div>
 					<button
@@ -229,14 +212,308 @@ function Sidebar({ mobile = false, onClose, activePage = 'inventory', onNavigate
 	)
 }
 
-function Inventory({ activePage = 'inventory', onNavigate = () => {}, onLogout = () => {} }) {
+function Inventory({ activePage = 'inventory', onNavigate = () => {}, onLogout = () => {}, profile = null, user = null }) {
 	const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
 	const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
+	const [inventoryItems, setInventoryItems] = useState([])
+	const [selectedCategory, setSelectedCategory] = useState('All Items')
+	const [searchTerm, setSearchTerm] = useState('')
+	const [isFormOpen, setIsFormOpen] = useState(false)
+	const [editingItem, setEditingItem] = useState(null)
+	const [formData, setFormData] = useState(defaultFormState)
+	const [formError, setFormError] = useState('')
+	const [isSaving, setIsSaving] = useState(false)
+
+	useEffect(() => {
+		if (!user?.uid) {
+			return undefined
+		}
+
+		const inventoryRef = collection(db, 'users', user.uid, 'inventory')
+		const unsubscribe = onSnapshot(inventoryRef, (snapshot) => {
+			const nextItems = snapshot.docs
+				.map((inventoryDoc) => {
+					const data = inventoryDoc.data()
+					const quantity = Number(data.quantity ?? 0)
+					const lowStockThreshold = Number(data.lowStockThreshold ?? 10)
+					const updatedAt = parseTimestamp(data.updatedAt)
+					const createdAt = parseTimestamp(data.createdAt)
+
+					return {
+						id: inventoryDoc.id,
+						name: data.name || 'Untitled Item',
+						sku: normalizeSku(data.sku),
+						category: data.category || 'Uncategorized',
+						supplier: data.supplier || 'Unknown Supplier',
+						quantity,
+						lowStockThreshold,
+						updatedAt,
+						createdAt,
+					}
+				})
+				.sort((left, right) => {
+					const leftTime = left.updatedAt?.getTime() || left.createdAt?.getTime() || 0
+					const rightTime = right.updatedAt?.getTime() || right.createdAt?.getTime() || 0
+					return rightTime - leftTime
+				})
+
+			setInventoryItems(nextItems)
+		})
+
+		return unsubscribe
+	}, [user?.uid])
+
+	const inventoryCategories = useMemo(() => {
+		const uniqueCategories = new Set()
+		inventoryItems.forEach((item) => {
+			if (item.category) {
+				uniqueCategories.add(item.category)
+			}
+		})
+
+		return ['All Items', ...Array.from(uniqueCategories).sort((left, right) => left.localeCompare(right))]
+	}, [inventoryItems])
+
+	const activeCategory = inventoryCategories.includes(selectedCategory) ? selectedCategory : 'All Items'
+
+	const visibleItems = useMemo(() => {
+		const normalizedSearch = searchTerm.trim().toLowerCase()
+
+		return inventoryItems.filter((item) => {
+			const matchesCategory = activeCategory === 'All Items' || item.category === activeCategory
+			const matchesSearch =
+				!normalizedSearch ||
+				[item.name, item.sku, item.category, item.supplier].some((field) =>
+					String(field || '').toLowerCase().includes(normalizedSearch),
+				)
+
+			return matchesCategory && matchesSearch
+		})
+	}, [activeCategory, inventoryItems, searchTerm])
+
+	const summary = useMemo(() => {
+		const totalProducts = inventoryItems.length
+		const lowStockItems = inventoryItems.filter((item) => item.quantity > 0 && item.quantity <= item.lowStockThreshold).length
+		const outOfStockItems = inventoryItems.filter((item) => item.quantity <= 0).length
+		const totalUnits = inventoryItems.reduce((accumulator, item) => accumulator + item.quantity, 0)
+
+		return [
+			{
+				title: 'Total Products',
+				value: totalProducts.toLocaleString(),
+				meta: inventoryItems.length ? `${inventoryCategories.length - 1} active categories` : 'No inventory records yet',
+				metaClass: 'text-emerald-600',
+				icon: FiPackage,
+				iconClass: 'text-[#8A5B29]',
+				borderClass: 'border-slate-200',
+			},
+			{
+				title: 'Low Stock Items',
+				value: lowStockItems.toLocaleString(),
+				meta: lowStockItems ? 'Requires attention' : 'Healthy stock levels',
+				metaClass: lowStockItems ? 'text-[#f05a22]' : 'text-emerald-600',
+				icon: FiAlertTriangle,
+				iconClass: 'text-[#f6a25e]',
+				borderClass: 'border-rose-200',
+			},
+			{
+				title: 'Out of Stock',
+				value: outOfStockItems.toLocaleString(),
+				meta: outOfStockItems ? 'Critical Action' : 'Nothing missing',
+				metaClass: outOfStockItems ? 'text-rose-600' : 'text-slate-500',
+				icon: FiArchive,
+				iconClass: 'text-rose-400',
+				borderClass: 'border-slate-200',
+			},
+			{
+				title: 'Total Units',
+				value: totalUnits.toLocaleString(),
+				meta: 'Live quantity across inventory',
+				metaClass: 'text-blue-600',
+				icon: FiShoppingCart,
+				iconClass: 'text-blue-500',
+				borderClass: 'border-slate-200',
+			},
+		]
+	}, [inventoryCategories.length, inventoryItems])
+
+	const activities = useMemo(() => {
+		const recentUpdate = [...inventoryItems].sort((left, right) => {
+			const leftTime = left.updatedAt?.getTime() || left.createdAt?.getTime() || 0
+			const rightTime = right.updatedAt?.getTime() || right.createdAt?.getTime() || 0
+			return rightTime - leftTime
+		})[0]
+		const lowStockItem = inventoryItems.find((item) => item.quantity > 0 && item.quantity <= item.lowStockThreshold)
+
+		const nextActivities = []
+
+		if (recentUpdate) {
+			nextActivities.push({
+				title: `Updated: ${recentUpdate.name}`,
+				description: `${recentUpdate.quantity} units in ${recentUpdate.category}.`,
+				time: recentUpdate.updatedAt ? formatRelativeTime(recentUpdate.updatedAt) : 'Recently',
+				icon: FiTruck,
+				iconWrap: 'bg-blue-100 text-blue-500',
+			})
+		}
+
+		if (lowStockItem) {
+			nextActivities.push({
+				title: `Alert: ${lowStockItem.name} is low`,
+				description: `Only ${lowStockItem.quantity} units remain. Threshold is ${lowStockItem.lowStockThreshold}.`,
+				time: 'Needs attention',
+				icon: FiAlertTriangle,
+				iconWrap: 'bg-orange-100 text-orange-500',
+			})
+		}
+
+		if (!nextActivities.length) {
+			nextActivities.push({
+				title: 'No stock activity yet',
+				description: 'Add inventory items to start tracking movement and alerts.',
+				time: 'Waiting for data',
+				icon: FiBox,
+				iconWrap: 'bg-slate-100 text-slate-500',
+			})
+		}
+
+		return nextActivities.slice(0, 2)
+	}, [inventoryItems])
+
+	const suppliers = useMemo(() => {
+		const supplierMap = new Map()
+		inventoryItems.forEach((item) => {
+			if (!supplierMap.has(item.supplier)) {
+				supplierMap.set(item.supplier, new Set())
+			}
+
+			supplierMap.get(item.supplier).add(item.category)
+		})
+
+		const nextSuppliers = Array.from(supplierMap.entries()).map(([name, categoriesSet]) => ({
+			name,
+			subtitle: Array.from(categoriesSet).join(' / '),
+		}))
+
+		if (!nextSuppliers.length) {
+			return [
+				{ name: 'No suppliers yet', subtitle: 'Create your first inventory item' },
+			]
+		}
+
+		return nextSuppliers
+	}, [inventoryItems])
+
+	const filteredRows = useMemo(() => {
+		return visibleItems.map((item) => {
+			const status = getInventoryStatus(item.quantity, item.lowStockThreshold)
+
+			return {
+				...item,
+				quantityLabel: `${item.quantity.toLocaleString()} units`,
+				status: status.label,
+				statusClass: status.statusClass,
+				quantityClass: status.quantityClass,
+			}
+		})
+	}, [visibleItems])
+
+	const handleOpenAddForm = () => {
+		setEditingItem(null)
+		setFormData(defaultFormState)
+		setFormError('')
+		setIsFormOpen(true)
+	}
+
+	const handleOpenEditForm = (item) => {
+		setEditingItem(item)
+		setFormData({
+			name: item.name,
+			sku: item.sku,
+			category: item.category,
+			supplier: item.supplier,
+			quantity: String(item.quantity),
+			lowStockThreshold: String(item.lowStockThreshold),
+		})
+		setFormError('')
+		setIsFormOpen(true)
+	}
+
+	const handleCloseForm = () => {
+		setIsFormOpen(false)
+		setEditingItem(null)
+		setFormError('')
+		setIsSaving(false)
+		setFormData(defaultFormState)
+	}
+
+	const handleSubmitInventoryItem = async (event) => {
+		event.preventDefault()
+
+		if (!user?.uid) {
+			setFormError('Sign in to manage inventory.')
+			return
+		}
+
+		const name = formData.name.trim()
+		const sku = normalizeSku(formData.sku)
+		const category = formData.category.trim()
+		const supplier = formData.supplier.trim()
+		const quantity = Number(formData.quantity)
+		const lowStockThreshold = Number(formData.lowStockThreshold)
+
+		if (!name || !sku || !category || !supplier || Number.isNaN(quantity) || Number.isNaN(lowStockThreshold)) {
+			setFormError('Complete all inventory fields before saving.')
+			return
+		}
+
+		setIsSaving(true)
+		setFormError('')
+
+		try {
+			const payload = {
+				name,
+				sku,
+				category,
+				supplier,
+				quantity,
+				lowStockThreshold,
+				updatedAt: serverTimestamp(),
+			}
+
+			if (editingItem) {
+				await updateDoc(doc(db, 'users', user.uid, 'inventory', editingItem.id), payload)
+			} else {
+				await addDoc(collection(db, 'users', user.uid, 'inventory'), {
+					...payload,
+					createdAt: serverTimestamp(),
+				})
+			}
+
+			handleCloseForm()
+		} catch (error) {
+			setFormError(error instanceof Error ? error.message : 'Failed to save inventory item.')
+			setIsSaving(false)
+		}
+	}
+
+	const handleDeleteInventoryItem = async (item) => {
+		if (!user?.uid) {
+			return
+		}
+
+		const confirmed = window.confirm(`Delete ${item.name} from inventory?`)
+		if (!confirmed) {
+			return
+		}
+
+		await deleteDoc(doc(db, 'users', user.uid, 'inventory', item.id))
+	}
 
 	return (
 		<div className="h-screen overflow-hidden bg-[#F4F5F7] text-slate-900">
 			<div className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:block">
-				<Sidebar activePage={activePage} onNavigate={onNavigate} onLogout={onLogout} />
+				<Sidebar activePage={activePage} onNavigate={onNavigate} onLogout={onLogout} profile={profile} user={user} />
 			</div>
 
 			{isMobileMenuOpen ? (
@@ -253,6 +530,8 @@ function Inventory({ activePage = 'inventory', onNavigate = () => {}, onLogout =
 						activePage={activePage}
 						onNavigate={onNavigate}
 						onLogout={onLogout}
+						profile={profile}
+						user={user}
 					/>
 				</div>
 			) : null}
@@ -279,6 +558,8 @@ function Inventory({ activePage = 'inventory', onNavigate = () => {}, onLogout =
 									<input
 										type="text"
 										placeholder="Search data..."
+										value={searchTerm}
+										onChange={(event) => setSearchTerm(event.target.value)}
 										className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
 									/>
 								</label>
@@ -286,10 +567,11 @@ function Inventory({ activePage = 'inventory', onNavigate = () => {}, onLogout =
 								<div className="flex items-center gap-2">
 									<button
 										type="button"
+										onClick={handleOpenAddForm}
 										className="inline-flex items-center gap-2 rounded-lg bg-[#8A5B29] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#734A20]"
 									>
-										<FiShoppingCart className="text-sm" />
-										Quick Add Sale
+										<FiPlus className="text-sm" />
+										Add Item
 									</button>
 									<div className="relative">
 										<button
@@ -309,7 +591,7 @@ function Inventory({ activePage = 'inventory', onNavigate = () => {}, onLogout =
 					</header>
 
 					<section className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-						{statCards.map((card) => {
+						{summary.map((card) => {
 							const Icon = card.icon
 							return (
 								<article
@@ -333,12 +615,13 @@ function Inventory({ activePage = 'inventory', onNavigate = () => {}, onLogout =
 						<div className="border-b border-slate-200 p-3 sm:p-4">
 							<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 								<div className="flex flex-wrap gap-2">
-									{categories.map((category, index) => (
+									{inventoryCategories.map((category) => (
 										<button
 											key={category}
 											type="button"
+											onClick={() => setSelectedCategory(category)}
 											className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
-												index === 0
+												activeCategory === category
 													? 'bg-[#8A5B29] text-white'
 													: 'bg-slate-100 text-slate-600 hover:bg-slate-200'
 											}`}
@@ -350,10 +633,11 @@ function Inventory({ activePage = 'inventory', onNavigate = () => {}, onLogout =
 
 								<button
 									type="button"
+									onClick={() => setSelectedCategory('All Items')}
 									className="inline-flex items-center gap-2 self-start rounded-lg px-2 py-1 text-sm font-medium text-slate-500 hover:text-slate-700 sm:self-auto"
 								>
 									<FiFilter className="text-sm" />
-									More Filters
+									Reset Filters
 								</button>
 							</div>
 						</div>
@@ -371,39 +655,47 @@ function Inventory({ activePage = 'inventory', onNavigate = () => {}, onLogout =
 									</tr>
 								</thead>
 								<tbody>
-									{inventoryRows.map((item) => (
-										<tr key={item.name} className="border-b border-slate-100 text-sm text-slate-600">
-											<td className="px-4 py-4">
-												<div className="flex items-center gap-3">
-													<div className="grid h-8 w-8 place-items-center rounded-md bg-[#F6EFE9] text-[#8A5B29]">
-														<FiList className="text-sm" />
+									{filteredRows.length ? (
+										filteredRows.map((item) => (
+											<tr key={item.id} className="border-b border-slate-100 text-sm text-slate-600">
+												<td className="px-4 py-4">
+													<div className="flex items-center gap-3">
+														<div className="grid h-8 w-8 place-items-center rounded-md bg-[#F6EFE9] text-[#8A5B29]">
+															<FiList className="text-sm" />
+														</div>
+														<div>
+															<p className="font-semibold text-slate-800">{item.name}</p>
+															<p className="text-xs text-slate-400">SKU: {item.sku}</p>
+														</div>
 													</div>
-													<div>
-														<p className="font-semibold text-slate-800">{item.name}</p>
-														<p className="text-xs text-slate-400">{item.sku}</p>
+												</td>
+												<td className="px-4 py-4">{item.category}</td>
+												<td className="px-4 py-4">{item.supplier}</td>
+												<td className={`px-4 py-4 font-semibold ${item.quantityClass}`}>{item.quantityLabel}</td>
+												<td className="px-4 py-4">
+													<span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${item.statusClass}`}>
+														{item.status}
+													</span>
+												</td>
+												<td className="px-4 py-4">
+													<div className="flex items-center gap-3 text-slate-400">
+														<button type="button" onClick={() => handleOpenEditForm(item)} className="hover:text-slate-600" aria-label={`Edit ${item.name}`}>
+															<FiEdit2 className="text-sm" />
+														</button>
+														<button type="button" onClick={() => handleDeleteInventoryItem(item)} className="hover:text-slate-600" aria-label={`Delete ${item.name}`}>
+															<FiTrash2 className="text-sm" />
+														</button>
 													</div>
-												</div>
-											</td>
-											<td className="px-4 py-4">{item.category}</td>
-											<td className="px-4 py-4">{item.supplier}</td>
-											<td className={`px-4 py-4 font-semibold ${item.quantityClass}`}>{item.quantity}</td>
-											<td className="px-4 py-4">
-												<span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${item.statusClass}`}>
-													{item.status}
-												</span>
-											</td>
-											<td className="px-4 py-4">
-												<div className="flex items-center gap-3 text-slate-400">
-													<button type="button" className="hover:text-slate-600">
-														<FiEdit2 className="text-sm" />
-													</button>
-													<button type="button" className="hover:text-slate-600">
-														<FiTrash2 className="text-sm" />
-													</button>
-												</div>
+												</td>
+											</tr>
+										))
+									) : (
+										<tr>
+											<td colSpan={6} className="px-4 py-12 text-center text-sm text-slate-500">
+												No inventory items match your current search or filter.
 											</td>
 										</tr>
-									))}
+									)}
 								</tbody>
 							</table>
 						</div>
@@ -461,14 +753,68 @@ function Inventory({ activePage = 'inventory', onNavigate = () => {}, onLogout =
 											<div className="mx-auto mb-2 grid h-9 w-9 place-items-center rounded-full bg-slate-100 text-slate-500">
 												<FiTrendingUp className="text-sm" />
 											</div>
-											<p className="font-semibold text-slate-800">{suppliers[2].name}</p>
-											<p className="text-xs text-slate-400">{suppliers[2].subtitle}</p>
+											<p className="font-semibold text-slate-800">{suppliers[2]?.name || 'Add more suppliers'}</p>
+											<p className="text-xs text-slate-400">{suppliers[2]?.subtitle || 'More inventory records will populate this card.'}</p>
 										</div>
 									</div>
 								</div>
 							</div>
 						</article>
 					</section>
+
+					{isFormOpen ? (
+						<div className="fixed inset-0 z-50 grid place-items-center bg-black/45 px-4 py-6">
+							<div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl">
+								<div className="mb-4 flex items-start justify-between gap-4">
+									<div>
+										<p className="text-sm font-semibold uppercase tracking-wide text-[#8A5B29]">
+											{editingItem ? 'Edit Inventory Item' : 'Add Inventory Item'}
+										</p>
+										<h3 className="text-2xl font-bold tracking-tight text-slate-900">Live inventory record</h3>
+									</div>
+									<button type="button" onClick={handleCloseForm} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 text-slate-500 transition hover:text-slate-700" aria-label="Close form">
+										<FiX />
+									</button>
+								</div>
+
+								<form className="grid gap-4 sm:grid-cols-2" onSubmit={handleSubmitInventoryItem}>
+									<label className="grid gap-1 sm:col-span-2">
+										<span className="text-sm font-medium text-slate-600">Product Name</span>
+										<input value={formData.name} onChange={(event) => setFormData((current) => ({ ...current, name: event.target.value }))} className="rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#8A5B29]" placeholder="NeuralLink Pro Gen-2" />
+									</label>
+									<label className="grid gap-1">
+										<span className="text-sm font-medium text-slate-600">SKU</span>
+										<input value={formData.sku} onChange={(event) => setFormData((current) => ({ ...current, sku: event.target.value }))} className="rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#8A5B29]" placeholder="BW-NL-2024" />
+									</label>
+									<label className="grid gap-1">
+										<span className="text-sm font-medium text-slate-600">Category</span>
+										<input value={formData.category} onChange={(event) => setFormData((current) => ({ ...current, category: event.target.value }))} className="rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#8A5B29]" placeholder="Neuro-gear" />
+									</label>
+									<label className="grid gap-1">
+										<span className="text-sm font-medium text-slate-600">Supplier</span>
+										<input value={formData.supplier} onChange={(event) => setFormData((current) => ({ ...current, supplier: event.target.value }))} className="rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#8A5B29]" placeholder="Synapse Tech Corp" />
+									</label>
+									<label className="grid gap-1">
+										<span className="text-sm font-medium text-slate-600">Quantity</span>
+										<input type="number" min="0" value={formData.quantity} onChange={(event) => setFormData((current) => ({ ...current, quantity: event.target.value }))} className="rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#8A5B29]" />
+									</label>
+									<label className="grid gap-1">
+										<span className="text-sm font-medium text-slate-600">Low Stock Threshold</span>
+										<input type="number" min="0" value={formData.lowStockThreshold} onChange={(event) => setFormData((current) => ({ ...current, lowStockThreshold: event.target.value }))} className="rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#8A5B29]" />
+									</label>
+									{formError ? <p className="sm:col-span-2 text-sm font-medium text-rose-600">{formError}</p> : null}
+									<div className="flex items-center justify-end gap-3 sm:col-span-2">
+										<button type="button" onClick={handleCloseForm} className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50">
+											Cancel
+										</button>
+										<button type="submit" disabled={isSaving} className="rounded-lg bg-[#8A5B29] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#734A20] disabled:cursor-not-allowed disabled:opacity-70">
+											{isSaving ? 'Saving...' : editingItem ? 'Update Item' : 'Create Item'}
+										</button>
+									</div>
+								</form>
+							</div>
+						</div>
+					) : null}
 				</div>
 			</main>
 		</div>
