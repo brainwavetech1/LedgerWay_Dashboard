@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
 	FiBell,
 	FiBox,
-	FiCpu,
 	FiCreditCard,
+	FiCpu,
 	FiGrid,
 	FiHeadphones,
 	FiHome,
@@ -13,15 +13,17 @@ import {
 	FiMinus,
 	FiMonitor,
 	FiPlus,
+	FiPrinter,
+	FiSave,
 	FiSearch,
 	FiSettings,
 	FiShoppingCart,
 	FiSmartphone,
 	FiTrendingUp,
 	FiX,
-	FiPrinter,
-	FiSave,
 } from 'react-icons/fi'
+import { collection, onSnapshot } from 'firebase/firestore'
+import { db } from '../../firebase'
 import NotificationPopup from '../shared/NotificationPopup'
 
 const menuItems = [
@@ -33,28 +35,58 @@ const menuItems = [
 	{ key: 'notifications', label: 'Notifications', icon: FiMessageSquare },
 ]
 
-const categories = ['All Items', 'Electronics', 'Accessories', 'Software', 'Workstations', 'Audio']
+const DEFAULT_CATEGORY = 'All Items'
+const DEFAULT_PAYMENT_METHOD = 'Cash'
 
-const products = [
-	{ name: 'BrainWave Pro X1', stock: 24, price: '$299.00', icon: FiHeadphones, tint: 'from-slate-900 to-slate-700' },
-	{ name: 'Smart Stylus Gen 2', stock: 12, price: '$89.00', icon: FiSmartphone, tint: 'from-teal-900 to-cyan-700' },
-	{ name: 'Neural Slate Tablet', stock: 8, price: '$549.00', icon: FiCreditCard, tint: 'from-slate-200 to-slate-50' },
-	{ name: 'Infinity View Monitor', stock: 15, price: '$399.00', icon: FiMonitor, tint: 'from-amber-950 to-amber-700' },
-]
+function parseTimestamp(value) {
+	if (!value) return null
+	if (typeof value.toDate === 'function') return value.toDate()
+	const date = new Date(value)
+	return Number.isNaN(date.getTime()) ? null : date
+}
 
-const cartItems = [
-	{ name: 'Smart Stylus Gen 2', price: '$89.00', qty: 1, icon: FiSmartphone, tint: 'from-[#D4E8E1] to-[#B9D9CF]' },
-	{ name: 'BrainWave Pro X1', oldPrice: '$598.00', price: '$538.20', qty: 2, icon: FiHeadphones, tint: 'from-[#315753] to-[#274844]' },
-]
+function normalizeText(value, fallback = '') {
+	return String(value || fallback).trim() || fallback
+}
+
+function formatCurrency(value) {
+	return new Intl.NumberFormat('en-US', {
+		style: 'currency',
+		currency: 'USD',
+		maximumFractionDigits: 2,
+	}).format(value)
+}
+
+function formatSku(value) {
+	return String(value || '').replace(/^SKU:\s*/i, '').trim()
+}
+
+function getProductStatus(quantity) {
+	if (quantity <= 0) return 'Out'
+	if (quantity <= 10) return 'Low'
+	return 'In Stock'
+}
+
+function getProductTone(quantity) {
+	if (quantity <= 0) return 'from-rose-900 to-rose-600'
+	if (quantity <= 10) return 'from-amber-900 to-orange-700'
+	return 'from-slate-900 to-slate-700'
+}
+
+function getProductIcon(category) {
+	const normalized = String(category || '').toLowerCase()
+	if (normalized.includes('audio') || normalized.includes('headphone') || normalized.includes('speaker')) return FiHeadphones
+	if (normalized.includes('mobile') || normalized.includes('phone') || normalized.includes('accessor')) return FiSmartphone
+	if (normalized.includes('monitor') || normalized.includes('workstation') || normalized.includes('display')) return FiMonitor
+	return FiCreditCard
+}
 
 function Sidebar({ mobile = false, onClose, activePage = 'pos', onNavigate = () => {}, onLogout = () => {}, profile = null, user = null }) {
 	const displayName = profile?.fullName || user?.displayName || user?.email?.split('@')[0] || 'Account'
 	const subtitle = profile?.businessName || profile?.industry || user?.email || 'Signed in'
 
 	return (
-		<aside
-			className={`flex h-screen w-68 flex-col overflow-hidden border-r border-slate-200 bg-white ${mobile ? 'shadow-2xl' : ''}`}
-		>
+		<aside className={`flex h-screen w-68 flex-col overflow-hidden border-r border-slate-200 bg-white ${mobile ? 'shadow-2xl' : ''}`}>
 			<div className="flex items-center justify-between border-b border-slate-200 px-5 py-5">
 				<div className="flex items-center gap-3">
 					<div className="grid h-9 w-9 place-items-center rounded-md bg-[#794B1A] text-white">
@@ -66,11 +98,7 @@ function Sidebar({ mobile = false, onClose, activePage = 'pos', onNavigate = () 
 					</div>
 				</div>
 				{mobile ? (
-					<button
-						type="button"
-						onClick={onClose}
-						className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 text-slate-500 transition hover:text-slate-700"
-					>
+					<button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 text-slate-500 transition hover:text-slate-700">
 						<FiX />
 					</button>
 				) : null}
@@ -81,27 +109,18 @@ function Sidebar({ mobile = false, onClose, activePage = 'pos', onNavigate = () 
 					{menuItems.map((item) => {
 						const Icon = item.icon
 						const isActive = item.key === activePage
-						const isClickable =
-							item.key === 'home' ||
-							item.key === 'pos' ||
-							item.key === 'inventory' ||
-							item.key === 'analytics' ||
-							item.key === 'ai-insights'
+						const isClickable = item.key === 'home' || item.key === 'pos' || item.key === 'inventory' || item.key === 'analytics' || item.key === 'ai-insights'
+
 						return (
 							<li key={item.label}>
 								<button
 									type="button"
 									onClick={() => {
-										if (isClickable) {
-											onNavigate(item.key)
-											if (mobile && onClose) onClose()
-										}
+										if (!isClickable) return
+										onNavigate(item.key)
+										if (mobile && onClose) onClose()
 									}}
-									className={`flex w-full items-center gap-3 rounded-lg border-0 px-3 py-2.5 text-left text-sm font-medium transition ${
-										isActive
-											? 'bg-[#F5EBD9] text-slate-900'
-											: 'text-slate-600 hover:bg-[#F5EBD9] hover:text-slate-900'
-									}`}
+									className={`flex w-full items-center gap-3 rounded-lg border-0 px-3 py-2.5 text-left text-sm font-medium transition ${isActive ? 'bg-[#F5EBD9] text-slate-900' : 'text-slate-600 hover:bg-[#F5EBD9] hover:text-slate-900'}`}
 								>
 									<Icon className="text-base" />
 									{item.label}
@@ -135,12 +154,7 @@ function Sidebar({ mobile = false, onClose, activePage = 'pos', onNavigate = () 
 							<p className="text-[11px] text-slate-500">{subtitle}</p>
 						</div>
 					</div>
-					<button
-						type="button"
-						onClick={onLogout}
-						className="grid h-7 w-7 place-items-center rounded-md text-red-500 transition hover:bg-red-50 hover:text-red-600"
-						aria-label="Log out"
-					>
+					<button type="button" onClick={onLogout} className="grid h-7 w-7 place-items-center rounded-md text-red-500 transition hover:bg-red-50 hover:text-red-600" aria-label="Log out">
 						<FiLogOut />
 					</button>
 				</div>
@@ -152,6 +166,112 @@ function Sidebar({ mobile = false, onClose, activePage = 'pos', onNavigate = () 
 function Pos({ activePage = 'pos', onNavigate = () => {}, onLogout = () => {}, profile = null, user = null }) {
 	const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
 	const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
+	const [searchTerm, setSearchTerm] = useState('')
+	const [selectedCategory, setSelectedCategory] = useState(DEFAULT_CATEGORY)
+	const [paymentMethod, setPaymentMethod] = useState(DEFAULT_PAYMENT_METHOD)
+	const [cartItems, setCartItems] = useState([])
+	const [inventoryItems, setInventoryItems] = useState([])
+
+	useEffect(() => {
+		if (!user?.uid) return undefined
+
+		const inventoryRef = collection(db, 'users', user.uid, 'inventory')
+		const unsubscribe = onSnapshot(inventoryRef, (snapshot) => {
+			const nextItems = snapshot.docs
+				.map((inventoryDoc) => {
+					const data = inventoryDoc.data()
+					const quantity = Number(data.quantity ?? 0) || 0
+					const lowStockThreshold = Number(data.lowStockThreshold ?? 10) || 10
+					const createdAt = parseTimestamp(data.createdAt)
+					const updatedAt = parseTimestamp(data.updatedAt) || createdAt
+
+					return {
+						id: inventoryDoc.id,
+						name: normalizeText(data.name, 'Untitled Item'),
+						sku: formatSku(data.sku),
+						category: normalizeText(data.category, 'Uncategorized'),
+						supplier: normalizeText(data.supplier, 'Unknown Supplier'),
+						quantity,
+						lowStockThreshold,
+						updatedAt,
+						createdAt,
+						unitPrice: Number(data.unitPrice ?? data.price ?? 0) || 0,
+					}
+				})
+				.sort((left, right) => {
+					const leftTime = left.updatedAt?.getTime() || left.createdAt?.getTime() || 0
+					const rightTime = right.updatedAt?.getTime() || right.createdAt?.getTime() || 0
+					return rightTime - leftTime
+				})
+
+			setInventoryItems(nextItems)
+		})
+
+		return unsubscribe
+	}, [user?.uid])
+
+	const categories = useMemo(() => {
+		const uniqueCategories = new Set(inventoryItems.map((item) => item.category).filter(Boolean))
+		return [DEFAULT_CATEGORY, ...Array.from(uniqueCategories).sort((left, right) => left.localeCompare(right))]
+	}, [inventoryItems])
+
+	const visibleProducts = useMemo(() => {
+		const normalizedSearch = searchTerm.trim().toLowerCase()
+		return inventoryItems.filter((item) => {
+			const matchesCategory = selectedCategory === DEFAULT_CATEGORY || item.category === selectedCategory
+			const matchesSearch =
+				!normalizedSearch ||
+				[item.name, item.sku, item.category, item.supplier].some((field) => String(field || '').toLowerCase().includes(normalizedSearch))
+			return matchesCategory && matchesSearch
+		})
+	}, [inventoryItems, searchTerm, selectedCategory])
+
+	const cartTotals = useMemo(() => {
+		const subtotal = cartItems.reduce((sum, item) => sum + item.price * item.qty, 0)
+		const discount = subtotal * 0.1
+		const tax = (subtotal - discount) * 0.05
+		const total = subtotal - discount + tax
+		return { subtotal, discount, tax, total }
+	}, [cartItems])
+
+	const addToCart = (product) => {
+		if (product.quantity <= 0) return
+
+		setCartItems((currentItems) => {
+			const existingItem = currentItems.find((item) => item.id === product.id)
+			if (existingItem) {
+				return currentItems.map((item) => (item.id === product.id ? { ...item, qty: Math.min(item.qty + 1, product.quantity) } : item))
+			}
+
+			return [
+				...currentItems,
+				{
+					id: product.id,
+					name: product.name,
+					price: product.unitPrice,
+					qty: 1,
+					icon: getProductIcon(product.category),
+					tint: product.quantity <= 10 ? 'from-[#D4E8E1] to-[#B9D9CF]' : 'from-[#315753] to-[#274844]',
+					maxQty: product.quantity,
+				},
+			]
+		})
+	}
+
+	const updateCartQty = (itemId, delta) => {
+		setCartItems((currentItems) =>
+			currentItems
+				.map((item) => {
+					if (item.id !== itemId) return item
+					const nextQty = item.qty + delta
+					if (nextQty <= 0) return null
+					return { ...item, qty: Math.min(nextQty, item.maxQty) }
+				})
+				.filter(Boolean),
+		)
+	}
+
+	const clearCart = () => setCartItems([])
 
 	return (
 		<div className="h-screen overflow-hidden bg-[#f5f6f8] text-slate-900">
@@ -161,21 +281,8 @@ function Pos({ activePage = 'pos', onNavigate = () => {}, onLogout = () => {}, p
 
 			{isMobileMenuOpen ? (
 				<div className="fixed inset-0 z-50 flex lg:hidden">
-					<button
-						type="button"
-						onClick={() => setIsMobileMenuOpen(false)}
-						className="h-full flex-1 bg-black/35"
-						aria-label="Close sidebar"
-					/>
-					<Sidebar
-						mobile
-						onClose={() => setIsMobileMenuOpen(false)}
-						activePage={activePage}
-						onNavigate={onNavigate}
-						onLogout={onLogout}
-						profile={profile}
-						user={user}
-					/>
+					<button type="button" onClick={() => setIsMobileMenuOpen(false)} className="h-full flex-1 bg-black/35" aria-label="Close sidebar" />
+					<Sidebar mobile onClose={() => setIsMobileMenuOpen(false)} activePage={activePage} onNavigate={onNavigate} onLogout={onLogout} profile={profile} user={user} />
 				</div>
 			) : null}
 
@@ -184,15 +291,13 @@ function Pos({ activePage = 'pos', onNavigate = () => {}, onLogout = () => {}, p
 					<header className="mb-3 rounded-2xl bg-white px-4 py-3 shadow-sm sm:px-5">
 						<div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
 							<div className="flex items-center gap-3">
-								<button
-									type="button"
-									onClick={() => setIsMobileMenuOpen(true)}
-									className="grid h-10 w-10 place-items-center rounded-lg border border-slate-200 text-slate-600 lg:hidden"
-									aria-label="Open sidebar"
-								>
+								<button type="button" onClick={() => setIsMobileMenuOpen(true)} className="grid h-10 w-10 place-items-center rounded-lg border border-slate-200 text-slate-600 lg:hidden" aria-label="Open sidebar">
 									<FiMenu />
 								</button>
-								<h1 className="text-2xl font-bold tracking-tight">POS</h1>
+								<div>
+									<h1 className="text-2xl font-bold tracking-tight">POS</h1>
+									<p className="text-sm text-slate-500">Live inventory-driven checkout</p>
+								</div>
 							</div>
 
 							<div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -200,27 +305,20 @@ function Pos({ activePage = 'pos', onNavigate = () => {}, onLogout = () => {}, p
 									<FiSearch className="text-slate-400" />
 									<input
 										type="text"
-										placeholder="Search data..."
+										placeholder="Search products by name or SKU..."
+										value={searchTerm}
+										onChange={(event) => setSearchTerm(event.target.value)}
 										className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
 									/>
 								</label>
 
 								<div className="flex items-center gap-2">
-									<button
-										type="button"
-										className="inline-flex items-center gap-2 rounded-lg bg-[#794B1A] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#633B14]"
-									>
+									<button type="button" className="inline-flex items-center gap-2 rounded-lg bg-[#794B1A] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#633B14]">
 										<FiShoppingCart className="text-sm" />
 										Quick Add Sale
 									</button>
 									<div className="relative">
-										<button
-											type="button"
-											onClick={() => setIsNotificationsOpen((prev) => !prev)}
-											className="grid h-10 w-10 place-items-center rounded-lg border border-slate-200 text-slate-500 transition hover:text-slate-700"
-											aria-label="Open notifications"
-											aria-expanded={isNotificationsOpen}
-										>
+										<button type="button" onClick={() => setIsNotificationsOpen((prev) => !prev)} className="grid h-10 w-10 place-items-center rounded-lg border border-slate-200 text-slate-500 transition hover:text-slate-700" aria-label="Open notifications" aria-expanded={isNotificationsOpen}>
 											<FiBell />
 										</button>
 										<NotificationPopup open={isNotificationsOpen} onClose={() => setIsNotificationsOpen(false)} />
@@ -236,21 +334,20 @@ function Pos({ activePage = 'pos', onNavigate = () => {}, onLogout = () => {}, p
 								<FiSearch className="text-slate-400" />
 								<input
 									type="text"
-									placeholder="Search products by name or SKU..."
+									placeholder="Search inventory..."
+									value={searchTerm}
+									onChange={(event) => setSearchTerm(event.target.value)}
 									className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
 								/>
 							</label>
 
 							<div className="mb-5 flex gap-4 overflow-x-auto border-b border-slate-200 pb-2">
-								{categories.map((category, index) => (
+								{categories.map((category) => (
 									<button
 										key={category}
 										type="button"
-										className={`shrink-0 border-b-2 px-4 py-2 text-sm font-semibold transition ${
-											index === 0
-												? 'border-[#794B1A] text-[#794B1A]'
-												: 'border-transparent text-slate-500 hover:text-slate-700'
-										}`}
+										onClick={() => setSelectedCategory(category)}
+										className={`shrink-0 border-b-2 px-4 py-2 text-sm font-semibold transition ${category === selectedCategory ? 'border-[#794B1A] text-[#794B1A]' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
 									>
 										{category}
 									</button>
@@ -258,29 +355,32 @@ function Pos({ activePage = 'pos', onNavigate = () => {}, onLogout = () => {}, p
 							</div>
 
 							<div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
-								{products.map((product) => {
-									const ProductIcon = product.icon
+								{visibleProducts.length ? visibleProducts.map((product) => {
+									const ProductIcon = getProductIcon(product.category)
+									const tone = getProductTone(product.quantity)
+									const status = getProductStatus(product.quantity)
+
 									return (
-										<article key={product.name} className="rounded-xl border border-slate-200 p-2.5 shadow-sm">
-											<div
-												className={`mb-3 grid h-30 place-items-center rounded-lg bg-linear-to-br ${product.tint}`}
-											>
+										<article key={product.id} className="rounded-xl border border-slate-200 p-2.5 shadow-sm">
+											<div className={`mb-3 grid h-30 place-items-center rounded-lg bg-linear-to-br ${tone}`}>
 												<ProductIcon className="text-4xl text-white/90" />
 											</div>
 											<h3 className="truncate text-[23px] font-bold leading-6 text-slate-800">{product.name}</h3>
-											<p className="mt-1 text-sm text-slate-400">In stock: {product.stock} units</p>
+											<p className="mt-1 text-sm text-slate-400">{product.sku || 'No SKU'} • {status} stock</p>
+											<div className="mt-1 text-xs font-semibold text-slate-500">{product.category}</div>
 											<div className="mt-3 flex items-center justify-between">
-												<p className="text-3xl font-extrabold text-[#794B1A]">{product.price}</p>
-												<button
-													type="button"
-													className="grid h-8 w-8 place-items-center rounded-full bg-[#f2e8dd] text-[#794B1A] transition hover:bg-[#e7d7c6]"
-												>
+												<p className="text-3xl font-extrabold text-[#794B1A]">{formatCurrency(product.unitPrice || 0)}</p>
+												<button type="button" onClick={() => addToCart(product)} disabled={product.quantity <= 0} className="grid h-8 w-8 place-items-center rounded-full bg-[#f2e8dd] text-[#794B1A] transition hover:bg-[#e7d7c6] disabled:cursor-not-allowed disabled:opacity-40">
 													<FiPlus />
 												</button>
 											</div>
 										</article>
 									)
-								})}
+								}) : (
+									<div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500 sm:col-span-2 2xl:col-span-4">
+										No inventory matches the current search.
+									</div>
+								)}
 							</div>
 						</div>
 
@@ -291,119 +391,70 @@ function Pos({ activePage = 'pos', onNavigate = () => {}, onLogout = () => {}, p
 										<FiShoppingCart className="text-[#794B1A]" />
 										Current Cart
 									</h2>
-									<button type="button" className="text-sm font-semibold text-slate-400 hover:text-slate-600">
-										Clear
-									</button>
+									<button type="button" onClick={clearCart} className="text-sm font-semibold text-slate-400 hover:text-slate-600">Clear</button>
 								</div>
 							</div>
 
 							<div className="space-y-4 border-b border-slate-200 p-4">
-								{cartItems.map((item) => {
+								{cartItems.length ? cartItems.map((item) => {
 									const CartIcon = item.icon
 									return (
-										<div key={item.name} className="flex items-center justify-between gap-3">
+										<div key={item.id} className="flex items-center justify-between gap-3">
 											<div className="flex min-w-0 items-center gap-3">
-												<div
-													className={`grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-linear-to-br ${item.tint}`}
-												>
+												<div className={`grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-linear-to-br ${item.tint}`}>
 													<CartIcon className="text-xl text-white" />
 												</div>
 												<div className="min-w-0">
 													<p className="truncate text-sm font-bold text-slate-800">{item.name}</p>
 													<div className="mt-1 inline-flex items-center gap-2">
-														<button
-															type="button"
-															className="grid h-5 w-5 place-items-center rounded bg-slate-100 text-slate-600"
-														>
-															<FiMinus className="text-[10px]" />
-														</button>
+														<button type="button" onClick={() => updateCartQty(item.id, -1)} className="grid h-5 w-5 place-items-center rounded bg-slate-100 text-slate-600"><FiMinus className="text-[10px]" /></button>
 														<span className="text-sm font-semibold text-slate-700">{item.qty}</span>
-														<button
-															type="button"
-															className="grid h-5 w-5 place-items-center rounded bg-slate-100 text-slate-600"
-														>
-															<FiPlus className="text-[10px]" />
-														</button>
+														<button type="button" onClick={() => updateCartQty(item.id, 1)} className="grid h-5 w-5 place-items-center rounded bg-slate-100 text-slate-600"><FiPlus className="text-[10px]" /></button>
 													</div>
 												</div>
 											</div>
-
 											<div className="shrink-0 text-right">
-												{item.oldPrice ? <p className="text-xs line-through text-slate-300">{item.oldPrice}</p> : null}
-												<p className="text-lg font-bold text-[#794B1A]">{item.price}</p>
+												<p className="text-lg font-bold text-[#794B1A]">{formatCurrency(item.price * item.qty)}</p>
+												<p className="text-xs text-slate-400">{formatCurrency(item.price)} each</p>
 											</div>
 										</div>
 									)
-								})}
+								}) : (
+									<p className="text-sm font-medium text-slate-500">Add inventory items to build a live cart.</p>
+								)}
 							</div>
 
 							<div className="space-y-3 p-4 text-sm">
-								<div className="flex justify-between text-slate-500">
-									<span>Subtotal</span>
-									<span className="font-semibold text-slate-700">$627.20</span>
-								</div>
-								<div className="flex justify-between text-emerald-500">
-									<span>Discount (10%)</span>
-									<span className="font-semibold">-$59.80</span>
-								</div>
-								<div className="flex justify-between text-slate-500">
-									<span>Tax (VAT 5%)</span>
-									<span className="font-semibold text-slate-700">$28.37</span>
-								</div>
-								<div className="flex justify-between border-t border-slate-200 pt-3 text-xl font-bold">
-									<span>Total</span>
-									<span className="text-[#794B1A]">$595.77</span>
-								</div>
+								<div className="flex justify-between text-slate-500"><span>Subtotal</span><span className="font-semibold text-slate-700">{formatCurrency(cartTotals.subtotal)}</span></div>
+								<div className="flex justify-between text-emerald-500"><span>Discount (10%)</span><span className="font-semibold">-{formatCurrency(cartTotals.discount)}</span></div>
+								<div className="flex justify-between text-slate-500"><span>Tax (VAT 5%)</span><span className="font-semibold text-slate-700">{formatCurrency(cartTotals.tax)}</span></div>
+								<div className="flex justify-between border-t border-slate-200 pt-3 text-xl font-bold"><span>Total</span><span className="text-[#794B1A]">{formatCurrency(cartTotals.total)}</span></div>
 
 								<div className="pt-2">
 									<p className="mb-3 text-[11px] font-bold tracking-wider text-slate-400">PAYMENT METHOD</p>
 									<div className="grid grid-cols-3 gap-2">
-										<button
-											type="button"
-											className="rounded-xl border-2 border-[#794B1A] bg-[#faf4ee] p-2 text-center text-xs font-semibold text-[#794B1A]"
-										>
-											<FiCreditCard className="mx-auto mb-1 text-sm" />
-											Cash
-										</button>
-										<button
-											type="button"
-											className="rounded-xl border border-slate-200 bg-slate-50 p-2 text-center text-xs font-semibold text-slate-500"
-										>
-											<FiCreditCard className="mx-auto mb-1 text-sm" />
-											Card
-										</button>
-										<button
-											type="button"
-											className="rounded-xl border border-slate-200 bg-slate-50 p-2 text-center text-xs font-semibold text-slate-500"
-										>
-											<FiSmartphone className="mx-auto mb-1 text-sm" />
-											Mobile
-										</button>
+										{[
+											{ label: 'Cash', icon: FiCreditCard },
+											{ label: 'Card', icon: FiCreditCard },
+											{ label: 'Mobile', icon: FiSmartphone },
+										].map((method) => {
+											const MethodIcon = method.icon
+											const isActive = paymentMethod === method.label
+											return (
+												<button key={method.label} type="button" onClick={() => setPaymentMethod(method.label)} className={`rounded-xl border-2 p-2 text-center text-xs font-semibold ${isActive ? 'border-[#794B1A] bg-[#faf4ee] text-[#794B1A]' : 'border-slate-200 bg-slate-50 text-slate-500'}`}>
+													<MethodIcon className="mx-auto mb-1 text-sm" />
+													{method.label}
+												</button>
+											)
+										})}
 									</div>
 
 									<div className="mt-4 grid grid-cols-2 gap-2">
-										<button
-											type="button"
-											className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#e9eef5] px-3 py-3 text-sm font-semibold text-slate-600"
-										>
-											<FiPrinter />
-											Print
-										</button>
-										<button
-											type="button"
-											className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#e9eef5] px-3 py-3 text-sm font-semibold text-slate-600"
-										>
-											<FiSave />
-											Save
-										</button>
+										<button type="button" className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#e9eef5] px-3 py-3 text-sm font-semibold text-slate-600"><FiPrinter />Print</button>
+										<button type="button" className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#e9eef5] px-3 py-3 text-sm font-semibold text-slate-600"><FiSave />Save</button>
 									</div>
 
-									<button
-										type="button"
-										className="mt-4 w-full rounded-xl bg-[#794B1A] px-4 py-3.5 text-sm font-bold tracking-wide text-white shadow-[0_10px_20px_rgba(121,75,26,0.25)] transition hover:bg-[#633B14]"
-									>
-										COMPLETE TRANSACTION
-									</button>
+									<button type="button" className="mt-4 w-full rounded-xl bg-[#794B1A] px-4 py-3.5 text-sm font-bold tracking-wide text-white shadow-[0_10px_20px_rgba(121,75,26,0.25)] transition hover:bg-[#633B14]">COMPLETE TRANSACTION</button>
 								</div>
 							</div>
 						</aside>
